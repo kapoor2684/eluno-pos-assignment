@@ -1,39 +1,79 @@
-# Reply to the thread — Billing v1 (Shopify POS replacement)
+# Stakeholder Reply — Shopify POS Replacement (V1)
 
-**To:** Rohan, Meena, Dr. Iyer, Vikram, Farhan · **From:** Product-Tech (Priya's scoped plan) · **Re:** live by 15 Nov
+## 1. Questions to Resolve Before Production
 
-Everyone's asks are reasonable individually; a few collide, and two are not billing. Below: what I need decided, what I'm building, what I'm not, and what I need from you.
+Before finalising the production scope, several decisions need confirmation from the relevant stakeholders.
 
-## 1. Questions (who · why it matters for v1)
+**Offers and discount policy — Retail and Finance:** Meena and Rohan have requested that festive, second-pair, and priority discounts stack, but the current offer configuration marks some offers as non-stackable. Should Retail change the offer configuration, or should the till continue to enforce the configured eligibility and stackability rules? I recommend honouring the configured rules until Retail and Finance approve a change. Manager discounts should require an authorised manager identity and reason code, with a defined 10% limit and an auditable record. The manual discount should replace automatic offers unless Finance explicitly approves a different policy.
 
-| # | To | Question | Why it matters |
-|---|---|---|---|
-| 1 | **Meena, Rohan** | Your pitch is *Festive 10% + second pair 50% + priority ₹500 together*. Today `FESTIVE10` is marked **non-stackable** (so is the Progressive campaign). Do you want to flip those flags (a data change, no code), or keep them exclusive? | Biggest revenue/margin lever in the pack. As configured the till picks the *best single outcome for the customer*. Floor staff will see "why didn't my offer apply" daily unless this is settled. |
-| 2 | **Meena, Vikram** | Manager discount: "no approval chain" vs. "approver's identity on every manual discount". Is *a store manager entering their own PIN + reason code* enough? Is 10% on top of offers, or instead of them? | I read these as compatible (manager **is** the approver, one tap, no queue). 10% stacked on a 20% offer is a margin risk; I built it as *instead of*, and it shows what offers would have given. |
-| 3 | **Vikram + CA** | (a) Frame 18% / lens 5% when sold together: is that one composite supply taxed differently? (b) How must a bill-level discount (priority ₹500) be apportioned across lines for GST? (c) Is e-invoicing/IRN applicable to us? (d) FY reset: do series restart each April, and is the credit-note series separate? (e) "To the rupee": do we compare to the paisa? | (a)/(b) change every invoice's tax; I allocate discounts pro-rata by remaining value and tax each line at its HSN, which is defensible but not confirmed. (c) would add an external call to every bill. |
-| 4 | **Rohan** | "Under 10 seconds from yes": does the clock include the customer tapping UPI/card? | Terminal time is human-bound. I'm committing to **≤2 s of our own time at p95** (price + record + Shopify write); the demo bills in <0.2 s against the mock. |
-| 5 | **Dr. Iyer** | Remakes: what are the 3–4 cost-bearer cases (us / customer / external optometrist), and where must cost be recorded? Who may confirm an external Rx with off-grid axis? | A remake is a zero-value order that references the parent invoice and must not touch frame stock. Cost-bearer is not a Shopify field; it needs a home (lab system?). |
-| 6 | **Meena, Vikram** | Family bill: one Shopify order has one customer, and a GST invoice has one buyer. Who is the buyer when three people each have an Rx? | Lines can each carry an `rx_id`, so it's technically feasible, but refunds, credit notes and "whose lens is remade" get complicated. |
-| 7 | **Farhan, Ops** | Koramangala: is the Wi-Fi drop total, or does the terminal's own SIM still work? | Decides whether we need offline cash-only mode or just a retry queue. |
-| 8 | **Retail** | Policy for refunds: invoices say lenses aren't returnable once dispensed and frames within 7 days, yet Finance wants a full refund flow. Who can approve what, and within how many days? | I built the mechanics (frame restocked, lens scrapped); the rule about *when* is a business decision. |
-| 9 | **Rohan** | "Priority" in the queue tool and in Shopify: same definition? | In the seed, `priority` is a Shopify tag that tracks lifetime spend > ₹5,000. If the queue tool computes it differently, the till and the queue will disagree on the same customer. |
+**Tax and invoice compliance — Finance:** Vikram and the CA should confirm the applicable HSN tax rates and effective dates, how discounts are allocated across invoice lines, whether frame-and-lens bundles affect tax treatment, and whether e-invoicing requirements apply. Finance must also confirm the financial-year reset, invoice cancellation policy, and separate credit-note numbering requirements. Invoice numbers should be sequential per store, with cancelled invoices retained in the sequence and fully auditable.
 
-## 2. What I'm building vs deferring
+**Prescription validation — Optometry:** Dr. Iyer should confirm the handling of expired prescriptions, missing ADD values, lens-range restrictions, and external prescriptions with axis values outside the 5-degree grid. Invalid prescriptions should produce actionable errors, and clinical values must never be silently rounded. Any exception should require an explicitly authorised optometrist.
 
-**Building (v1, Must + the cheap Shoulds Finance asked for):** customer + Rx lookup; lens validation against Rx (range, ADD, 5° axis, expiry) with actionable messages; offers by rule with best-outcome stacking; GST per line by HSN and invoice date; charge → per-store gapless invoice number → Shopify order (Rx on lens line); full refund with credit note, frame restock at billing store; day-end from Shopify with mismatch flags; cash till with variance alert (> ₹200); channel on every order and per-store channel split; audit trail with reason codes; printable invoice.
+**Refunds and remakes — Retail, Finance and Optometry:** The stakeholders must agree on the refund eligibility window, approval rules, and treatment of dispensed lenses. For remakes, we need defined cost-bearer categories, authorisation rules, and a reference to the original invoice. A remake must not rebill the frame or alter frame stock.
 
-**Deferring, with reasons:** *Remake flow* and *family billing* (need answers 5, 6; both are modelling decisions that are expensive to undo). *Partial refunds* (Must is full refund; partial interacts with discount allocation). *Split payments*, *zero-value bills*. *Rohan's 10 am email* (a scheduled job on top of the day-end data; needs an owner and an email provider, so not on the till's critical path). *Offer authoring and Rx-photo AI*: not before billing is solid.
+**Family billing — Retail and Finance:** Can one order support multiple prescription-linked lens lines for different family members under one payer? The buyer, invoice details, refund ownership, and prescription associations must be agreed before implementing family billing.
 
-## 3. Contradictions, risks, out of scope
+**Outages and reconciliation — Finance and Ops:** What is the escalation process when payment succeeds but Shopify is unavailable? I recommend retaining durable transaction state, retrying safely, and preventing duplicate charges or orders. Finance should define day-end reconciliation for gross sales, discounts, taxable value, tax, refunds, and payment methods, including how pending Shopify synchronisation is reported.
 
-- **Offers vs. data:** see Q1. Also `FESTIVE10` expires **15 Nov**, the launch day, and the Progressive campaign on 31 Oct: someone must own offer calendar changes (they are data, not deploys).
-- **"Fast" vs. "gapless numbers":** a gapless series needs one authority per store. With more than one till per store, local numbering would collide. v1 assumes **one till service per store**, with the series seeded from Shopify's highest existing number so we never reuse seeded invoices. A central allocator is the fix if stores run several tills.
-- **"Day-end matches Shopify" vs. the till writing to Shopify after the customer pays:** during an outage a bill can be paid, numbered, and not yet in Shopify. The report shows it as a **flagged mismatch** until synced, rather than hiding it.
-- **Money taken, Shopify refuses (e.g. out of stock):** the bill is marked REJECTED and a human must refund; I don't auto-refund.
-- **Shopify API:** the exercise mock is REST. Shopify now steers new apps to GraphQL; the adapter boundary absorbs that, but allow time.
-- **Not billing (route elsewhere):** removing the beverage question and fixing the Indiranagar footfall camera belong to the queue-tool / facilities owners. I won't fold them into this project.
-- **15 Nov for all 7 stores** is the riskiest sentence in the thread (~3 weeks, cash-handling and tax unverified). I recommend **one pilot store** (with Shopify POS as fallback) the week of 2 Nov, then three, then all seven.
+**Operational reporting — Founder and Retail:** Is the 10 am daily email required for the initial pilot? We need an owner for the recipient list, report delivery, and failure handling. The report should include yesterday's bill count, average bill value, and discounts by store.
 
-## 4. What I need to ship for real
+## 2. Proposed V1 Scope
 
-Shopify: a custom app with orders/customers/inventory/products scopes, a staging store, and confirmation of API limits. Store tool: authenticated Rx and staff APIs, and a way for an optometrist to confirm an Rx on the till. Payments: terminal vendor SDK, settlement report, and its idempotency/refund-status API. Finance/CA: answers to Q3, FY prefixes, and who receives the variance alert. Ops: hardware per store (tills, printers, network), a pilot store, and a lab process for remakes. Retail: offer calendar owner, refund policy (Q8), floor training.
+### Must Have
+
+V1 should prioritise a reliable end-to-end billing flow while keeping Shopify as the system of record.
+
+1. Customer lookup by phone and retrieval of the latest valid prescription.
+2. Frame and lens cart with lens-matrix selection and prescription-range validation, including actionable errors for invalid combinations.
+3. Data-driven offer evaluation using eligibility, effective dates, priority, and stackability rules.
+4. Inclusive-GST calculations per line using HSN-specific rates, invoice dates, and paise-level rounding.
+5. Payment-terminal integration followed by Shopify order creation, including line items, discounts, tax lines, prescription details on lens lines, sale transactions, and store-specific invoice numbers.
+6. Full refunds recorded in Shopify, with tax reversal, a credit note referencing the original invoice, frame restocking at the original billing store, and no lens restocking.
+7. Day-end reporting by store and date, including bill count, gross sales, taxable value, tax, discounts, refunds, and payment-method breakdown.
+8. Automated tests for tax, discount and refund calculations, with retry handling and duplicate-order protection for transient failures.
+
+The billing flow should target the requested sub-10-second experience, while ensuring that prescription checks, payment confirmation, and transaction recovery are never bypassed. Performance should be measured under realistic conditions.
+
+### Should Have If the Must Flow Is Stable
+
+Cash-drawer sessions, paid-ins and paid-outs, variance alerts above ₹200, sales-channel reporting, printable invoices, and the daily summary email should follow once the core billing and reconciliation flow is reliable.
+
+### Deferred
+
+Family billing, a complete remake workflow, partial refunds, split payments, zero-value orders, offer authoring using natural language, prescription-entry assistance, and anomaly detection should be deferred until their business rules and operational dependencies are agreed.
+
+The beverage question in the queue tool and the Indiranagar footfall-camera issue should remain with their respective queue-tool and facilities owners, outside the POS replacement scope.
+
+## 3. Risks, Contradictions and Out-of-Scope Requests
+
+- **Offer stacking:** The request to stack every offer conflicts with explicit configuration rules. The system should follow the configured rules until Retail and Finance approve any changes.
+- **Manual discounts:** An unrestricted manager discount conflicts with Finance's audit requirement. Manager identity, a reason code, and an approved discount limit are necessary.
+- **Invoice numbering:** Gapless per-store numbering requires a single numbering authority per store. A local sequence can conflict if multiple till instances issue invoices independently. V1 should document its single-till-per-store assumption; a central allocator is needed before scaling to multiple tills per store.
+- **Payment and Shopify failures:** A successful payment followed by a Shopify failure must not result in a lost sale or duplicate charge. The system should preserve the pending transaction and recover safely. A permanent Shopify rejection after payment requires an explicit reconciliation and refund procedure.
+- **Day-end discrepancies:** During an outage, a paid bill may not yet appear in Shopify. Such transactions must be flagged as pending or mismatched rather than silently omitted from reconciliation.
+- **Tax uncertainty:** Incorrect tax rates or discount allocation can cause invoice errors. Finance and the CA must approve the policy and rate data before production.
+- **Speed versus correctness:** The 10-second target must not override prescription validation, payment confirmation, or durable recovery. Avoidable latency should be measured and optimised.
+- **Remakes and family billing:** Both require additional financial, stock, and prescription-association rules. They should not be introduced until the relevant owners approve the workflows.
+- **Production integration:** The exercise uses mock APIs. Real Shopify permissions, payment-terminal behaviour, authentication, rate limits, and outage handling must be validated before launch.
+- **Launch timeline:** A simultaneous rollout to all seven stores by 15 November carries operational risk. A staged rollout provides an opportunity to validate billing, refunds, inventory, and reconciliation before expansion.
+
+## 4. Dependencies for Production Launch
+
+**Finance and CA:** Approved HSN tax rates and effective dates, discount allocation policy, invoice and credit-note rules, financial-year resets, reconciliation definitions, and manual-discount audit requirements.
+
+**Retail:** Final offer stacking and precedence rules, manager permissions and limits, refund policy, pilot-store workflows, and acceptance criteria for billing speed.
+
+**Optometry:** Approved prescription validation rules, axis handling, expiry and ADD requirements, external-prescription exceptions, and remake authorisation.
+
+**Ops and Platform Engineering:** Production Shopify credentials and permissions, payment-terminal integration and idempotency support, authenticated prescription and staff APIs, inventory-location mapping, monitoring, outage recovery, and escalation procedures.
+
+**Product and Data:** Decisions on family billing, remakes, sales channels, and the daily email, including clear owners and success measures.
+
+**Release Team:** A pilot store, test scenarios covering payment failures and refunds, staff training, a rollback plan, and monitoring of billing performance and reconciliation.
+
+## Recommendation
+
+Deliver and validate the Must-have billing workflow first, using a pilot store with Shopify POS available as a fallback. Expand progressively only after payment processing, prescription validation, tax calculations, refunds, inventory updates, and day-end reconciliation pass agreed acceptance checks.
+
+The 15 November target should remain the delivery goal, while the production rollout remains dependent on stakeholder decisions, successful pilot results, and operational readiness.
