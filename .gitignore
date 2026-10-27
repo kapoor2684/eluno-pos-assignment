@@ -1,0 +1,4 @@
+.pos/
+.mock.pid
+__pycache__/
+*.pyc
