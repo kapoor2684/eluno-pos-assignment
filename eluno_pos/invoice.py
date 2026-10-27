@@ -6,10 +6,20 @@ WIDTH = 123
 
 
 def amount_in_words(amount):
-    """Convert a rupee amount to Indian English words."""
-    n = int(round(amount))
-    if n == 0:
-        return "Zero rupees only"
+    """Convert a rupee amount to Indian English words, including paise."""
+
+    from decimal import Decimal, ROUND_HALF_UP
+
+    # Accept values such as '₹19,072.15', '20383.22', or 100000.00
+    amount_str = str(amount).replace("₹", "").replace(",", "").strip()
+
+    value = Decimal(amount_str).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP
+    )
+
+    rupees = int(value)
+    paise = int((value - Decimal(rupees)) * 100)
 
     ones = [
         "", "One", "Two", "Three", "Four", "Five", "Six",
@@ -17,44 +27,56 @@ def amount_in_words(amount):
         "Thirteen", "Fourteen", "Fifteen", "Sixteen",
         "Seventeen", "Eighteen", "Nineteen"
     ]
+
     tens = [
         "", "", "Twenty", "Thirty", "Forty", "Fifty",
         "Sixty", "Seventy", "Eighty", "Ninety"
     ]
 
-    def under_thousand(value):
+    def under_thousand(n):
         words = []
 
-        if value >= 100:
-            words.extend([ones[value // 100], "Hundred"])
-            value %= 100
+        if n >= 100:
+            words.extend([ones[n // 100], "Hundred"])
+            n %= 100
 
-        if value >= 20:
-            words.append(tens[value // 10])
-            value %= 10
+        if n >= 20:
+            words.append(tens[n // 10])
+            n %= 10
 
-        if value:
-            words.append(ones[value])
+        if n:
+            words.append(ones[n])
 
         return " ".join(words)
 
-    parts = []
+    def indian_words(n):
+        if n == 0:
+            return "Zero"
 
-    for divisor, label in [
-        (10000000, "Crore"),
-        (100000, "Lakh"),
-        (1000, "Thousand"),
-        (1, ""),
-    ]:
-        group = n // divisor
-        n %= divisor
+        parts = []
 
-        if group:
-            parts.append(under_thousand(group))
-            if label:
-                parts.append(label)
+        for divisor, label in [
+            (10000000, "Crore"),
+            (100000, "Lakh"),
+            (1000, "Thousand"),
+            (1, ""),
+        ]:
+            group = n // divisor
+            n %= divisor
 
-    return " ".join(parts) + " rupees only"
+            if group:
+                parts.append(under_thousand(group))
+                if label:
+                    parts.append(label)
+
+        return " ".join(parts)
+
+    result = f"{indian_words(rupees)} Rupees"
+
+    if paise:
+        result += f" and {indian_words(paise)} Paise"
+
+    return result + " Only"
 
 
 def _money(value):
@@ -159,7 +181,7 @@ def render(d, invoice_no, shopify_label=None):
         out.append(f"Terminal ref   : {d['terminal_ref']}")
 
     out.append(
-        f"Amount in words: {amount_in_words(d.get('total', total))}"
+        f"Amount in words: {amount_in_words(inr(d.get('total', total)))}"
     )
 
     out.append(
